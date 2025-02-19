@@ -9,8 +9,6 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
-#import functools # Import functools
-
 
 # --- Data Loading and Preprocessing ---
 def load_and_preprocess_data(data_filepath, preprocess=True):
@@ -119,7 +117,7 @@ def no_feature_importance_plot(model):  # For models without feature_importances
 
 # --- GUI (Tkinter) ---
 root = tk.Tk()
-root.title("Prediction of Obesity Levels Based On Eating Habits and Physical Activites")
+root.title("Obesity Risk Assessment")
 
 data_file = ""
 df = None
@@ -128,30 +126,29 @@ numerical_features = None
 model = None
 label_encoder = None
 sex_label_encoder = None
+categorical_features = None  # Define it here, and it will be updated later
 
-# --- Browse file ---
+# --- Define functions FIRST ---
 def browse_file():
-    global data_file, df, scaler, numerical_features, label_encoder, sex_label_encoder
+    global data_file, df, scaler, numerical_features, label_encoder, sex_label_encoder, categorical_features
     filename = filedialog.askopenfilename(initialdir=".", title="Select CSV File", filetypes=(("CSV files", "*.csv"), ("All files", "*.*")))
     if filename:
         data_file = filename
         data_label.config(text=f"Selected File: {data_file}")
         try:
-            df, scaler, numerical_features, label_encoder, sex_label_encoder = load_and_preprocess_data(data_file)  # Include sex_label_encoder
+            df, scaler, numerical_features, label_encoder, sex_label_encoder = load_and_preprocess_data(data_file)
             if df is None:
                 messagebox.showerror("Error", "Failed to load or preprocess data. Check the file and data format.")
+                return  # Exit early if data loading fails
+
+            # --- Define categorical features based on the loaded data ---
+            categorical_features = ['Sex', 'CALC', 'FAVC', 'SCC', 'SMOKE', 'FAMHIS', 'CAEC', 'MTRANS', 'Classif']
+
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred during data loading: {e}")
 
-browse_button = tk.Button(root, text="Browse CSV", command=browse_file)
-browse_button.pack(pady=5)
-
-data_label = tk.Label(root, text="No file selected")
-data_label.pack()
-
-# --- Analyze Data and Train Model ---
 def analyze_and_train():
-    global df, model, numerical_features, scaler, label_encoder, sex_label_encoder, categorical_features
+    global df, model, numerical_features, scaler, label_encoder, sex_label_encoder, categorical_features, rf_accuracy, knn_accuracy, rf_report, knn_report, rf_cm, knn_cm
 
     if df is None:
         messagebox.showerror("Error", "No data loaded. Please select a CSV file.")
@@ -222,7 +219,7 @@ def analyze_and_train():
                     knn_frame = tk.LabelFrame(results_window, text="KNN")
                     knn_frame.pack(pady=10)
 
-                    knn_accuracy_label = tk.Label(knn_frame, text=f"Accuracy: {knn_accuracy:.4f}")
+                    knn_accuracy_label = tk.Label(knn_frame, text=f"Accuracy. {knn_accuracy:.4f}")
                     knn_accuracy_label.pack()
 
                     knn_report_text = tk.Text(knn_frame, wrap=tk.WORD, height=10)
@@ -244,39 +241,44 @@ def analyze_and_train():
             results_button.pack(pady=10)
 
             # --- Prediction Input (One Window) ---
-            def predict_obesity():
+
+            # --- Define predict_obesity function at the TOP LEVEL ---
+            def predict_obesity():  # Now a global function
                 try:
                     predict_window = tk.Toplevel(root)
                     predict_window.title("Prediction Input")
 
                     input_vars = {}
+                    row_num = 0  # Initialize row number for prediction window
 
-                    for i, feature in enumerate(['Age', 'Sex', 'Height', 'Weight', 'CALC', 'FAVC', 'FCVC', 'NCP', 'SCC', 'SMOKE', 'CH2O', 'FAMHIS', 'FAF', 'TUE', 'CAEC', 'MTRANS']):
-                        label = tk.Label(predict_window, text=feature)
-                        label.grid(row=i, column=0, padx=5, pady=5, sticky="w")
+                    for feature, label_text in input_labels.items():
+                        label = tk.Label(predict_window, text=label_text)
+                        label.grid(row=row_num, column=0, padx=5, pady=5, sticky="w")
 
                         if feature == 'Sex':
-                            categories = sex_label_encoder.classes_.tolist()  # Use the fitted encoder's classes
                             var = tk.StringVar(predict_window)
-                            var.set(categories[0])  # Set a default value
-                            dropdown = ttk.Combobox(predict_window, textvariable=var, values=categories, state='readonly')
-                            dropdown.grid(row=i, column=1, padx=5, pady=5, sticky="ew")
+                            var.set("Male")  # Default Value
+                            dropdown = ttk.Combobox(predict_window, textvariable=var, values=["Male", "Female"], state='readonly')  # Fixed values
+                            dropdown.grid(row=row_num, column=1, padx=5, pady=5, sticky="ew")
                             input_vars[feature] = var
                         elif feature in ['Height', 'Weight', 'FCVC', 'NCP', 'CH2O', 'FAF', 'TUE', 'Age']:
                             var = tk.DoubleVar(predict_window)
                             entry = tk.Entry(predict_window, textvariable=var)
-                            entry.grid(row=i, column=1, padx=5, pady=5, sticky="ew")
+                            entry.grid(row=row_num, column=1, padx=5, pady=5, sticky="ew")
                             input_vars[feature] = var
                         else:  # Other categorical features
-                            categories = label_encoder.classes_.tolist()  # Use the fitted encoder's classes
                             var = tk.StringVar(predict_window)
-                            var.set(categories[0])  # Set a default value
+                            var.set("no")  # Default Value
+                            categories = ["no", "yes"]  # Fixed values
                             dropdown = ttk.Combobox(predict_window, textvariable=var, values=categories, state='readonly')
-                            dropdown.grid(row=i, column=1, padx=5, pady=5, sticky="ew")
+                            dropdown.grid(row=row_num, column=1, padx=5, pady=5, sticky="ew")
                             input_vars[feature] = var
 
+                        row_num += 1
+
                     def predict_action():
-                        global scaler, model, numerical_features, label_encoder, sex_label_encoder, categorical_features
+                        global scaler, model, numerical_features, label_encoder, sex_label_encoder, categorical_features, results_label
+
                         input_data = {}
                         for feature in ['Age', 'Sex', 'Height', 'Weight', 'CALC', 'FAVC', 'FCVC', 'NCP', 'SCC', 'SMOKE', 'CH2O', 'FAMHIS', 'FAF', 'TUE', 'CAEC', 'MTRANS']:
                             value = input_vars[feature].get()
@@ -285,7 +287,7 @@ def analyze_and_train():
                         input_df = pd.DataFrame([input_data])
 
                         # --- Correctly handle categorical features ---
-                        for col in categorical_features:
+                        for col in categorical_features:  # Now categorical_features is accessible
                             if col in input_df.columns and col != 'Classif':
                                 if col == 'Sex':
                                     try:
@@ -316,13 +318,13 @@ def analyze_and_train():
                         try:
                             prediction = model.predict(input_df.drop('Classif', axis=1))
                             predicted_class = label_encoder.inverse_transform(prediction)[0]
-                            messagebox.showinfo("Prediction", f"Predicted Obesity Level: {predicted_class}")
-                            predict_window.destroy()
+                            results_label.config(text=f"Predicted Obesity Level: {predicted_class}")  # Update results label
+                            predict_window.destroy()  # Close the prediction window
                         except Exception as e:
                             messagebox.showerror("Error", f"An error occurred during prediction: {e}")
 
                     predict_button_inner = tk.Button(predict_window, text="Predict", command=predict_action)
-                    predict_button_inner.grid(row=len(['Age', 'Sex', 'Height', 'Weight', 'CALC', 'FAVC', 'FCVC', 'NCP', 'SCC', 'SMOKE', 'CH2O', 'FAMHIS', 'FAF', 'TUE', 'CAEC', 'MTRANS']), column=0, columnspan=2, pady=10)
+                    predict_button_inner.grid(row=row_num + 1, column=0, columnspan=2, pady=10)  # Place below input fields
 
                 except Exception as e:
                     messagebox.showerror("Error", f"An error occurred during prediction window creation: {e}")
@@ -333,7 +335,77 @@ def analyze_and_train():
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred during analysis: {e}")
 
-analyze_button = tk.Button(root, text="Analyze Data and Train Model", command=analyze_and_train)
-analyze_button.pack(pady=10)
+
+# --- Create UI Elements (AFTER defining functions) ---
+file_frame = tk.LabelFrame(root, text="1. Select Your Data File")
+file_frame.pack(pady=10, padx=10, fill=tk.X)
+
+browse_button = tk.Button(file_frame, text="Browse CSV File", command=browse_file)
+browse_button.pack(pady=5)
+
+data_label = tk.Label(file_frame, text="No file selected")
+data_label.pack()
+
+analysis_frame = tk.LabelFrame(root, text="2. Analyze and Train Model")
+analysis_frame.pack(pady=10, padx=10, fill=tk.X)
+
+analyze_button = tk.Button(analysis_frame, text="Start Analysis", command=analyze_and_train)
+analyze_button.pack(pady=5)
+
+prediction_frame = tk.LabelFrame(root, text="3. Predict Your Risk")
+prediction_frame.pack(pady=10, padx=10, fill=tk.X)
+
+input_labels = {  # Dictionary for easier management
+    'Age': 'Age (Years)',
+    'Sex': 'Sex',
+    'Height': 'Height (Meters)',  # Units provided
+    'Weight': 'Weight (Kg)',
+    'CALC': 'Consumption of Alcohol',  # More descriptive
+    'FAVC': 'Frequent Consumption of High Caloric Food',
+    'FCVC': 'Frequency of Consumption of Vegetables',
+    'NCP': 'Number of Main Meals',
+    'SCC': 'Consumption of Food Between Meals',
+    'SMOKE': 'Smoke',
+    'CH2O': 'Consumption of Water Daily',
+    'FAMHIS': 'Family History of Overweight',
+    'FAF': 'Physical Activity Frequency',
+    'TUE': 'Time Using Electronic Devices',
+    'CAEC': 'Consumption of Food Between Meals',
+    'MTRANS': 'Transportation Method Used',
+}
+
+input_vars = {}
+row_num = 0
+
+for feature, label_text in input_labels.items():
+    label = tk.Label(prediction_frame, text=label_text)
+    label.grid(row=row_num, column=0, padx=5, pady=5, sticky="w")  # Sticky for alignment
+
+    if feature == 'Sex':
+        var = tk.StringVar(prediction_frame)
+        var.set("Male")  # Default Value
+        dropdown = ttk.Combobox(prediction_frame, textvariable=var, values=["Male", "Female"], state='readonly')  # Fixed values
+        dropdown.grid(row=row_num, column=1, padx=5, pady=5, sticky="ew")  # Sticky for alignment
+        input_vars[feature] = var
+    elif feature in ['Height', 'Weight', 'FCVC', 'NCP', 'CH2O', 'FAF', 'TUE', 'Age']:
+        var = tk.DoubleVar(prediction_frame)
+        entry = tk.Entry(prediction_frame, textvariable=var)
+        entry.grid(row=row_num, column=1, padx=5, pady=5, sticky="ew")  # Sticky for alignment
+        input_vars[feature] = var
+    else:  # Other categorical features
+        var = tk.StringVar(prediction_frame)
+        var.set("no")  # Default Value
+        categories = ["no", "yes"]  # Fixed values
+        dropdown = ttk.Combobox(prediction_frame, textvariable=var, values=categories, state='readonly')
+        dropdown.grid(row=row_num, column=1, padx=5, pady=5, sticky="ew")  # Sticky for alignment
+        input_vars[feature] = var
+
+    row_num += 1
+
+#predict_button = tk.Button(prediction_frame, text="Calculate Risk", command=predict_obesity)  # Clearer button text
+#predict_button.grid(row=row_num + 1, column=0, columnspan=2, pady=10)  # Centered button
+
+results_label = tk.Label(prediction_frame, text="", font=("Arial", 14, "bold"))  # Larger, bolder font
+results_label.grid(row=row_num + 2, column=0, columnspan=2, pady=(0, 10))  # Space above
 
 root.mainloop()
