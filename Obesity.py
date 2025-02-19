@@ -311,6 +311,8 @@ def analyze_and_train():
                             messagebox.showerror("Error", "Invalid Height or Weight input for prediction.")
                             return
 
+                        # --- Convert cm to meters BEFORE calculating BMI ---
+                        input_df['Height'] = input_df['Height'] / 100  # Convert cm to meters
                         input_df['BMI'] = input_df['Weight'] / (input_df['Height'] ** 2)
 
                         input_df[numerical_features] = scaler.transform(input_df[numerical_features])
@@ -358,7 +360,7 @@ prediction_frame.pack(pady=10, padx=10, fill=tk.X)
 input_labels = {  # Dictionary for easier management
     'Age': 'Age (Years)',
     'Sex': 'Sex',
-    'Height': 'Height (Meters)',  # Units provided
+    'Height': 'Height (cm)',  # Units provided
     'Weight': 'Weight (Kg)',
     'CALC': 'Consumption of Alcohol',  # More descriptive
     'FAVC': 'Frequent Consumption of High Caloric Food',
